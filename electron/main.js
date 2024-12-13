@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs/promises');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -52,4 +53,50 @@ ipcMain.handle('select-folder', async () => {
     properties: ['openDirectory'],
   });
   return result.filePaths[0];
+});
+
+ipcMain.handle('find-version-folders', async (event, directoryPath) => {
+  try {
+    // Recursive function to search directories
+    async function searchDirectories(dir) {
+      const versionFolders = [];
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const fullPath = path.join(dir, entry.name);
+
+          // If this directory matches our pattern, add it and don't search deeper
+          if (/^v\d+$/.test(entry.name)) {
+            versionFolders.push({
+              path: fullPath,
+              version: entry.name,
+            });
+          } else {
+            // If it's not a version folder, search inside it
+            const subFolders = await searchDirectories(fullPath);
+            versionFolders.push(...subFolders);
+          }
+        }
+      }
+
+      return versionFolders;
+    }
+
+    // Start the recursive search
+    const allVersionFolders = await searchDirectories(directoryPath);
+
+    // Sort by version number (ascending)
+    allVersionFolders.sort((a, b) => {
+      const versionA = parseInt(a.version.slice(1));
+      const versionB = parseInt(b.version.slice(1));
+      return versionA - versionB;
+    });
+
+    console.log('Found folders:', allVersionFolders); // Debug log
+    return allVersionFolders;
+  } catch (error) {
+    console.error('Error scanning directory:', error);
+    throw error;
+  }
 });
