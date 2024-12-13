@@ -1,19 +1,17 @@
 {
   "name": "pixel-duck",
   "version": "1.0.0",
-  "main": "dist/index.html",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite build && nw .",
+    "start": "electron-forge start",
+    "dev:electron": "concurrently \"npm run dev\" \"npm run start\"",
+    "package": "vite build && electron-forge package",
+    "make": "vite build && electron-forge make",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --fix"
-  },
-  "window": {
-    "title": "PixelDuck",
-    "width": 800,
-    "height": 600
   },
   "repository": {
     "type": "git",
@@ -27,17 +25,23 @@
   "homepage": "https://github.com/gateian/pixel-duck#readme",
   "description": "",
   "devDependencies": {
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-deb": "^7.6.0",
+    "@electron-forge/maker-rpm": "^7.6.0",
+    "@electron-forge/maker-squirrel": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^28.3.3",
     "eslint-config-airbnb": "^19.0.4",
     "eslint-config-airbnb-typescript": "^18.0.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "nw": "^0.94.0-sdk",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"

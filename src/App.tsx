@@ -6,8 +6,8 @@ import {
   Box,
   Button,
   Typography,
-  Paper,
   Stack,
+  Paper,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { ComparisonResult } from './types/comparison';
@@ -19,7 +19,15 @@ interface PathConfig {
   compare: string;
 }
 
-// Define the theme
+// Declare the electronAPI type
+declare global {
+  interface Window {
+    electronAPI: {
+      selectFolder: () => Promise<string>;
+    };
+  }
+}
+
 const theme = createTheme({
   palette: {
     primary: {
@@ -33,24 +41,19 @@ const theme = createTheme({
 
 const App: React.FC = () => {
   const [paths, setPaths] = useState<PathConfig>({ source: '', compare: '' });
-  //   const [imageData, setImageData] = useState<ComparisonResult[]>([]);
-  //   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
 
-  const chooseDirectory = (pathType: 'source' | 'compare') => {
-    const chooser = document.createElement('input');
-    chooser.type = 'file';
-    chooser.webkitdirectory = true;
-
-    chooser.addEventListener('change', function (this: HTMLInputElement) {
-      if (this.files && this.files[0]) {
+  const chooseDirectory = async (pathtype: 'source' | 'compare') => {
+    try {
+      const folderPath = await window.electronAPI.selectFolder();
+      if (folderPath) {
         setPaths((prev) => ({
           ...prev,
-          [pathType]: this.files![0].webkitRelativePath,
+          [pathtype]: folderPath,
         }));
       }
-    });
-
-    chooser.click();
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+    }
   };
 
   return (
@@ -59,14 +62,15 @@ const App: React.FC = () => {
       <Box sx={{ p: 3 }}>
         <Stack direction="row" spacing={2} sx={{ mb: 2, alignItems: 'center' }}>
           <Header />
-          <Box sx={{ flexGrow: 1 }} />
-          <Button
-            variant="contained"
-            startIcon={<FolderOpenIcon />}
-            onClick={() => chooseDirectory('source')}
-          >
-            Set Render Folder Path
-          </Button>
+          <Box sx={{ flexGrow: 1 }}>
+            <Button
+              variant="contained"
+              startIcon={<FolderOpenIcon />}
+              onClick={() => chooseDirectory('source')}
+            >
+              Set Render Folder Path
+            </Button>
+          </Box>
         </Stack>
 
         {paths.source && (
@@ -81,7 +85,5 @@ const App: React.FC = () => {
     </ThemeProvider>
   );
 };
-
-// Canvas component for visualization
 
 export default App;
