@@ -1,0 +1,44 @@
+{
+  "name": "pixel-duck",
+  "version": "1.0.0",
+  "main": "dist/index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "vite build && nw .",
+    "preview": "vite preview"
+  },
+  "window": {
+    "title": "PixelDuck",
+    "width": 800,
+    "height": 600
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/gateian/pixel-duck.git"
+  },
+  "author": "Ian Hamblin",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gateian/pixel-duck/issues"
+  },
+  "homepage": "https://github.com/gateian/pixel-duck#readme",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "nw": "^0.94.0-sdk",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.2.0",
+    "@mui/material": "^6.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
