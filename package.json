@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "start": "vite build && nw .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --fix"
   },
   "window": {
     "title": "PixelDuck",
@@ -28,8 +30,15 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-airbnb-typescript": "^18.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
     "nw": "^0.94.0-sdk",
+    "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
   },

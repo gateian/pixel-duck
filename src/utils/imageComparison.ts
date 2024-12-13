@@ -3,20 +3,21 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ComparisonResult } from '../types/comparison';
 
-export async function findImageSequences(sourcePath: string, comparePath: string): Promise<ComparisonResult[]> {
+export async function findImageSequences(
+  sourcePath: string,
+  comparePath: string,
+): Promise<ComparisonResult[]> {
   const results: ComparisonResult[] = [];
-  
+
   try {
     // Get all files from source directory
     const sourceFiles = await fs.readdir(sourcePath);
-    const imageFiles = sourceFiles.filter(file => 
-      /\.(jpg|jpeg|png|gif)$/i.test(file)
-    );
+    const imageFiles = sourceFiles.filter((file) => /\.(jpg|jpeg|png|gif)$/i.test(file));
 
     for (const sourceFile of imageFiles) {
       const sourceFull = path.join(sourcePath, sourceFile);
       const compareFull = path.join(comparePath, sourceFile);
-      
+
       let compareExists = false;
       try {
         await fs.access(compareFull);
@@ -28,7 +29,7 @@ export async function findImageSequences(sourcePath: string, comparePath: string
       results.push({
         sourcePath: sourceFull,
         comparePath: compareExists ? compareFull : null,
-        diffPercentage: compareExists ? await compareImages(sourceFull, compareFull) : null
+        diffPercentage: compareExists ? await compareImages(sourceFull, compareFull) : null,
       });
     }
   } catch (error) {
