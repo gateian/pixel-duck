@@ -42,22 +42,54 @@ interface VersionFolder {
   version: string;
 }
 
+interface VersionFolder {
+  path: string;
+  version: string;
+}
+
+interface GroupedVersionFolders {
+  parent: string;
+  parentName: string;
+  paths: VersionFolder[];
+}
+
 const App: React.FC = () => {
   const [path, setPath] = useState<string>('');
   const [versionFolders, setVersionFolders] = useState<VersionFolder[]>([]);
+  const [groupedFolders, setGroupedFolders] = useState<GroupedVersionFolders[]>([]);
+
+  const groupVersionFoldersByParent = (folders: VersionFolder[]): GroupedVersionFolders[] => {
+    const groupedPaths = new Map<string, VersionFolder[]>();
+
+    folders.forEach((folder) => {
+      // Get parent path by removing the version folder name
+      const parentPath = folder.path
+        .substring(0, folder.path.lastIndexOf(folder.version))
+        .replace(/\\$/, '');
+
+      if (!groupedPaths.has(parentPath)) {
+        groupedPaths.set(parentPath, []);
+      }
+      groupedPaths.get(parentPath)?.push(folder);
+    });
+
+    // Convert Map to array of GroupedVersionFolders with parent folder names
+    return Array.from(groupedPaths.entries()).map(([parent, paths]) => ({
+      parent,
+      parentName: parent.split('\\').pop() || parent, // Get last part of path
+      paths,
+    }));
+  };
 
   const chooseDirectory = async () => {
     try {
-      console.log('Starting directory selection...');
       const folderPath = await window.electronAPI.selectFolder();
-      console.log('Selected folder path:', folderPath);
 
       if (folderPath) {
         setPath(folderPath);
-        console.log('About to scan for version folders in:', folderPath);
         const folders = await window.electronAPI.findVersionFolders(folderPath);
-        console.log('Found folders:', folders);
-        setVersionFolders(folders);
+        const grouped = groupVersionFoldersByParent(folders);
+        setGroupedFolders(grouped);
       }
     } catch (error) {
       console.error('Full error details:', error);
@@ -89,6 +121,24 @@ const App: React.FC = () => {
 
         {/* Canvas display for comparison results */}
         {/* {path && path && <ComparisonVisualizer data={imageData} />} */}
+
+        {groupedFolders.length > 0 && (
+          <div>
+            <h3>Grouped Version Folders:</h3>
+            <ul>
+              {groupedFolders.map((group) => (
+                <li key={group.parent}>
+                  <h4>{group.parentName}</h4>
+                  <ul>
+                    {group.paths.map((folder) => (
+                      <li key={folder.path}>{folder.version}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {versionFolders.length > 0 && (
           <div>
