@@ -17,6 +17,18 @@ interface PathConfig {
   compare: string;
 }
 
+// Define the theme
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+  },
+});
+
 const App: React.FC = () => {
   const [paths, setPaths] = useState<PathConfig>({ source: '', compare: '' });
   const [imageData, setImageData] = useState<ComparisonResult[]>([]);
@@ -31,7 +43,7 @@ const App: React.FC = () => {
       if (this.files && this.files[0]) {
         setPaths(prev => ({
           ...prev,
-          [pathType]: this.files![0].path
+          [pathType]: this.files![0].webkitRelativePath
         }));
       }
     });
