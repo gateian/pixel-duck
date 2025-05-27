@@ -22,6 +22,7 @@ declare global {
           version: string;
         }>
       >;
+      processSequence: (folderPath: string) => Promise<void>;
     };
   }
 }
@@ -36,11 +37,6 @@ const theme = createTheme({
     },
   },
 });
-
-interface VersionFolder {
-  path: string;
-  version: string;
-}
 
 interface VersionFolder {
   path: string;
@@ -96,6 +92,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleProcessSequence = async (folderPath: string) => {
+    try {
+      await window.electronAPI.processSequence(folderPath);
+      alert('Video processing started!'); // Or some other notification
+    } catch (error) {
+      console.error('Error processing sequence:', error);
+      alert('Error processing sequence. Check console for details.');
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -131,7 +137,17 @@ const App: React.FC = () => {
                   <h4>{group.parentName}</h4>
                   <ul>
                     {group.paths.map((folder) => (
-                      <li key={folder.path}>{folder.version}</li>
+                      <li key={folder.path}>
+                        {folder.version}
+                        <Button 
+                          variant="outlined" 
+                          size="small" 
+                          sx={{ ml: 2 }}
+                          onClick={() => handleProcessSequence(folder.path)}
+                        >
+                          Create Video
+                        </Button>
+                      </li>
                     ))}
                   </ul>
                 </li>
