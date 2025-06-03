@@ -73,9 +73,24 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
 
           // If this directory matches our pattern, add it and don't search deeper
           if (/^v\d+$/.test(entry.name)) {
+            let hasVideo = false;
+            const videoFilePath = path.join(fullPath, 'all_shots_combined.mp4');
+            try {
+              await fs.stat(videoFilePath);
+              hasVideo = true;
+              console.log(`Video check: Found '${videoFilePath}'. Setting hasVideo = true for ${fullPath}.`);
+            } catch (error) {
+              if (error.code === 'ENOENT') { 
+                console.log(`Video check: '${videoFilePath}' not found. Setting hasVideo = false for ${fullPath}.`);
+              } else {
+                console.error(`Video check: Error fs.stat('${videoFilePath}') for ${fullPath}:`, error.message);
+              }
+              // hasVideo remains false
+            }
             versionFolders.push({
               path: fullPath,
               version: entry.name,
+              hasVideo: hasVideo,
             });
           } else {
             // If it's not a version folder, search inside it
@@ -181,13 +196,9 @@ ipcMain.handle('process-sequence', async (event, versionFolderPath) => {
 
     if (videoFiles.length > 0) {
       const listFile = path.join(versionFolderPath, 'temp_ffmpeg_list.txt');
-      // Ensure paths in list file are suitable for ffmpeg (e.g., relative to a common base or absolute)
-      // For simplicity, using absolute paths. Escape single quotes in paths.
-      const fileContent = videoFiles.map(file => `file '${file.replace(/'/g, "'\\''")}'`).join('\n');
+      const fileContent = videoFiles.map(file => `file '${file.replace(/'/g, "'\\\\''")}'`).join('\n');
       await fs.writeFile(listFile, fileContent);
-
       const combinedOutput = path.join(versionFolderPath, 'all_shots_combined.mp4');
-
       try {
         if (await fs.stat(combinedOutput).then(() => true).catch(() => false)) {
           await fs.unlink(combinedOutput);
@@ -196,30 +207,27 @@ ipcMain.handle('process-sequence', async (event, versionFolderPath) => {
       } catch (e) {
         console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
       }
-      
       const combineCommand = `ffmpeg -f concat -safe 0 -i "${listFile}" -c copy "${combinedOutput}"`;
       try {
         console.log('Creating combined video...');
         console.log(`Running command: ${combineCommand}`);
-        execSync(combineCommand); // Consider making this async
+        execSync(combineCommand);
         console.log(`Created ${combinedOutput}`);
       } catch (error) {
         console.error('Error creating combined video:', error.message, error.stderr?.toString());
       }
-
       try {
         await fs.unlink(listFile);
         console.log(`Deleted temp list file: ${listFile}`);
       } catch(e) {
         console.warn(`Could not delete temp list file ${listFile}: ${e.message}`);
       }
-      
     } else {
       console.log('No video files were created, skipping combination.');
     }
     return { success: true, message: 'Processing complete.', outputDir: versionFolderPath };
   } catch (error) {
     console.error('Error in process-sequence handler:', error);
-    throw error; // Rethrow to be caught by the renderer process if needed
+    throw error;
   }
 });

@@ -13,6 +13,7 @@ import {
   Toolbar,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import MovieIcon from '@mui/icons-material/Movie';
 import Header from './components/header';
 
 // Declare the electronAPI type
@@ -24,6 +25,7 @@ declare global {
         Array<{
           path: string;
           version: string;
+          hasVideo?: boolean;
         }>
       >;
       processSequence: (folderPath: string) => Promise<void>;
@@ -45,6 +47,7 @@ const theme = createTheme({
 interface VersionFolder {
   path: string;
   version: string;
+  hasVideo?: boolean;
 }
 
 interface GroupedVersionFolders {
@@ -156,7 +159,6 @@ const App: React.FC = () => {
                         elevation={selectedFolders.includes(folder.path) ? 8 : 2}
                         sx={{
                           p: 2,
-                          textAlign: 'center',
                           cursor: 'pointer',
                           border: selectedFolders.includes(folder.path)
                             ? `2px solid ${theme.palette.primary.main}`
@@ -166,10 +168,14 @@ const App: React.FC = () => {
                             boxShadow: selectedFolders.includes(folder.path) ? theme.shadows[8] : theme.shadows[4],
                           },
                           transition: 'border-color 0.2s, box-shadow 0.2s, elevation 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
                         }}
                         onClick={() => handleFolderSelect(folder.path)}
                       >
                         <Typography variant="subtitle1">{folder.version}</Typography>
+                        {folder.hasVideo && <MovieIcon color="action" sx={{ ml: 1 }} />}
                       </Paper>
                     </Grid>
                   ))}
