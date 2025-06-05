@@ -12,13 +12,15 @@ import {
   AppBar,
   Toolbar,
   Modal,
-  CircularProgress,
   LinearProgress,
   Tooltip,
+  IconButton,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import MovieIcon from '@mui/icons-material/Movie';
 import Header from './components/header';
+import FolderIcon from '@mui/icons-material/Folder';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 const theme = createTheme({
   palette: {
@@ -238,8 +240,41 @@ const App: React.FC = () => {
                         }}
                         onClick={() => handleFolderSelect(folder.path)}
                       >
-                        <Typography variant="subtitle1">{folder.version}</Typography>
-                        {folder.hasVideo && <MovieIcon color="action" sx={{ ml: 1 }} />}
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          {selectedFolders.includes(folder.path) ? (
+                            <CheckCircleIcon color="primary" sx={{ mr: 1 }} />
+                          ) : (
+                            <Box sx={{ width: 24, height: 24, mr: 1 }} />
+                          )}
+                          <Typography variant="subtitle1">{folder.version}</Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Tooltip title="Open location" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.electronAPI.openFolderInExplorer(folder.path);
+                              }}
+                              sx={{
+                                '& svg': {
+                                  color: 'action.active',
+                                  transition: 'color 0.2s',
+                                },
+                                '&:hover svg': {
+                                  color: 'primary.main',
+                                },
+                              }}
+                            >
+                              <FolderIcon />
+                            </IconButton>
+                          </Tooltip>
+                          {folder.hasVideo && (
+                            <Tooltip title="Video generated already" arrow>
+                              <MovieIcon color="action" />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </Paper>
                     </Grid>
                   ))}

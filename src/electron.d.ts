@@ -5,6 +5,7 @@ declare global {
     electronAPI: {
       selectFolder: () => Promise<string>;
       getLastPath: () => Promise<string | undefined>;
+      openFolderInExplorer: (folderPath: string) => Promise<void>;
       findVersionFolders: (path: string) => Promise<
         Array<{
           path: string;

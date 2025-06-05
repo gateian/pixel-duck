@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { execFile } = require('child_process');
@@ -93,6 +93,10 @@ ipcMain.handle('dialog:openDirectory', async () => {
 
 ipcMain.handle('get-last-path', () => {
   return store.get('last-path');
+});
+
+ipcMain.handle('open-folder-in-explorer', (event, folderPath) => {
+  shell.openPath(folderPath);
 });
 
 ipcMain.handle('find-version-folders', async (event, directoryPath) => {
