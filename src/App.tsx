@@ -15,6 +15,7 @@ import {
   LinearProgress,
   Tooltip,
   IconButton,
+  Divider,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import MovieIcon from '@mui/icons-material/Movie';
@@ -37,6 +38,8 @@ interface VersionFolder {
   path: string;
   version: string;
   hasVideo?: boolean;
+  shotCount: number;
+  frameCount: number;
 }
 
 interface GroupedVersionFolders {
@@ -234,46 +237,58 @@ const App: React.FC = () => {
                               : theme.shadows[4],
                           },
                           transition: 'border-color 0.2s, box-shadow 0.2s, elevation 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
                         }}
                         onClick={() => handleFolderSelect(folder.path)}
                       >
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          {selectedFolders.includes(folder.path) ? (
-                            <CheckCircleIcon color="primary" sx={{ mr: 1 }} />
-                          ) : (
-                            <Box sx={{ width: 24, height: 24, mr: 1 }} />
-                          )}
-                          <Typography variant="subtitle1">{folder.version}</Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Tooltip title="Open location" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.electronAPI.openFolderInExplorer(folder.path);
-                              }}
-                              sx={{
-                                '& svg': {
-                                  color: 'action.active',
-                                  transition: 'color 0.2s',
-                                },
-                                '&:hover svg': {
-                                  color: 'primary.main',
-                                },
-                              }}
-                            >
-                              <FolderIcon />
-                            </IconButton>
-                          </Tooltip>
-                          {folder.hasVideo && (
-                            <Tooltip title="Video generated already" arrow>
-                              <MovieIcon color="action" />
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            width: '100%',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            {selectedFolders.includes(folder.path) ? (
+                              <CheckCircleIcon color="primary" sx={{ mr: 1 }} />
+                            ) : (
+                              <Box sx={{ width: 24, height: 24, mr: 1 }} />
+                            )}
+                            <Typography variant="subtitle1">{folder.version}</Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Tooltip title="Open location" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.electronAPI.openFolderInExplorer(folder.path);
+                                }}
+                                sx={{
+                                  '& svg': {
+                                    color: 'action.active',
+                                    transition: 'color 0.2s',
+                                  },
+                                  '&:hover svg': {
+                                    color: 'primary.main',
+                                  },
+                                }}
+                              >
+                                <FolderIcon />
+                              </IconButton>
                             </Tooltip>
-                          )}
+                            {folder.hasVideo && (
+                              <Tooltip title="Video generated already" arrow>
+                                <MovieIcon color="action" />
+                              </Tooltip>
+                            )}
+                          </Box>
+                        </Box>
+                        <Divider sx={{ my: 1, width: '100%' }} />
+                        <Box sx={{ width: '100%', textAlign: 'left' }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Shots: {folder.shotCount} | Frames: {folder.frameCount}
+                          </Typography>
                         </Box>
                       </Paper>
                     </Grid>

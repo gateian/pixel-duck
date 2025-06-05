@@ -133,10 +133,39 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
               }
               // hasVideo remains false
             }
+
+            let shotCount = 0;
+            let frameCount = 0;
+            try {
+              const versionEntries = await fs.readdir(fullPath, { withFileTypes: true });
+              const shotDirs = versionEntries.filter((e) => e.isDirectory());
+
+              if (shotDirs.length > 0) {
+                shotCount = shotDirs.length;
+                for (const shotDir of shotDirs) {
+                  const shotPath = path.join(fullPath, shotDir.name);
+                  const shotFiles = await fs.readdir(shotPath);
+                  frameCount += shotFiles.filter((f) => f.toLowerCase().endsWith('.png')).length;
+                }
+              } else {
+                const imageFiles = versionEntries.filter(
+                  (e) => !e.isDirectory() && e.name.toLowerCase().endsWith('.png'),
+                );
+                if (imageFiles.length > 0) {
+                  shotCount = 1;
+                  frameCount = imageFiles.length;
+                }
+              }
+            } catch (e) {
+              console.error(`Error analyzing folder contents for ${fullPath}:`, e);
+            }
+
             versionFolders.push({
               path: fullPath,
               version: entry.name,
               hasVideo: hasVideo,
+              shotCount,
+              frameCount,
             });
           } else {
             // If it's not a version folder, search inside it

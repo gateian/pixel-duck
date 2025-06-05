@@ -11,6 +11,8 @@ declare global {
           path: string;
           version: string;
           hasVideo?: boolean;
+          shotCount: number;
+          frameCount: number;
         }>
       >;
       processSequences: (folderPaths: string[]) => void;
