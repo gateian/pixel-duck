@@ -14,6 +14,7 @@ import {
   Modal,
   CircularProgress,
   LinearProgress,
+  Tooltip,
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import MovieIcon from '@mui/icons-material/Movie';
@@ -103,6 +104,19 @@ const App: React.FC = () => {
   );
 
   useEffect(() => {
+    const loadLastPath = async () => {
+      const lastPath = await window.electronAPI.getLastPath();
+      if (lastPath) {
+        setPath(lastPath);
+        const folders = await window.electronAPI.findVersionFolders(lastPath);
+        const grouped = groupVersionFoldersByParent(folders);
+        setGroupedFolders(grouped);
+      }
+    };
+    loadLastPath();
+  }, [groupVersionFoldersByParent]);
+
+  useEffect(() => {
     const removeListener = window.electronAPI.onProcessingUpdate((update) => {
       console.log('Processing Update:', update);
       switch (update.type) {
@@ -182,21 +196,17 @@ const App: React.FC = () => {
           <Stack direction="row" spacing={2} sx={{ mb: 2, alignItems: 'center' }}>
             <Header />
             <Box sx={{ flexGrow: 1 }}>
-              <Button
-                variant="contained"
-                startIcon={<FolderOpenIcon />}
-                onClick={() => chooseDirectory()}
-              >
-                Set Render Folder Path
-              </Button>
+              <Tooltip title={path || 'No folder selected'} arrow>
+                <Button
+                  variant="contained"
+                  startIcon={<FolderOpenIcon />}
+                  onClick={() => chooseDirectory()}
+                >
+                  Set Render Folder Path
+                </Button>
+              </Tooltip>
             </Box>
           </Stack>
-
-          {path && (
-            <Typography sx={{ mt: 1, mb: 2 }} color="text.secondary">
-              Path: {path}
-            </Typography>
-          )}
 
           {groupedFolders.length > 0 &&
             groupedFolders.map((group) => (

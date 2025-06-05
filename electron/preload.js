@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('dialog:openDirectory'),
+  getLastPath: () => ipcRenderer.invoke('get-last-path'),
   findVersionFolders: (path) => ipcRenderer.invoke('find-version-folders', path),
   processSequences: (folderPaths) => ipcRenderer.send('process-sequences', folderPaths),
   cancelProcessing: () => ipcRenderer.send('cancel-processing'),

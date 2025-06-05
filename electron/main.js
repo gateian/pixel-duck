@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { execFile } = require('child_process');
+const Store = require('electron-store');
 
+const store = new Store();
 const isDev = process.env.NODE_ENV !== 'production';
 
 let mainWindow;
@@ -84,7 +86,13 @@ ipcMain.handle('dialog:openDirectory', async () => {
     console.log('Folder selection cancelled or no path selected');
     return '';
   }
-  return result.filePaths[0];
+  const folderPath = result.filePaths[0];
+  store.set('last-path', folderPath);
+  return folderPath;
+});
+
+ipcMain.handle('get-last-path', () => {
+  return store.get('last-path');
 });
 
 ipcMain.handle('find-version-folders', async (event, directoryPath) => {

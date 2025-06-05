@@ -4,6 +4,7 @@ declare global {
   interface Window {
     electronAPI: {
       selectFolder: () => Promise<string>;
+      getLastPath: () => Promise<string | undefined>;
       findVersionFolders: (path: string) => Promise<
         Array<{
           path: string;
