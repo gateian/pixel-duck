@@ -1,14 +1,36 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
-const { exec } = require('child_process');
-const util = require('util');
-
-const execPromise = util.promisify(exec);
+const { execFile } = require('child_process');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
 let mainWindow;
+let childProcess = null;
+let isCancelled = false;
+
+const execFileCancellable = (command, args) => {
+  return new Promise((resolve, reject) => {
+    if (isCancelled) {
+      return reject(new Error('Cancelled'));
+    }
+    // execFile does not use a shell, so we can kill the process directly
+    childProcess = execFile(command, args, (error, stdout, stderr) => {
+      childProcess = null;
+      if (error) {
+        console.log(`Exec error: code=${error.code}, signal=${error.signal}`);
+        if (isCancelled) {
+          reject(new Error('Cancelled'));
+        } else {
+          error.stderr = stderr;
+          reject(error);
+        }
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+};
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -133,15 +155,27 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
   }
 });
 
+ipcMain.on('cancel-processing', () => {
+  console.log('Received cancellation request.');
+  isCancelled = true;
+  if (childProcess) {
+    // SIGKILL is a more forceful way to terminate, ensuring it stops immediately.
+    childProcess.kill('SIGKILL');
+    console.log('Sent SIGKILL to child process.');
+  }
+});
+
 // Handle processing image sequence to video
 ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
   console.log(`Received request to process ${versionFolderPaths.length} sequences.`);
+  isCancelled = false; // Reset cancellation flag on new job
   const totalFolders = versionFolderPaths.length;
   mainWindow.webContents.send('processing-update', { type: 'start', total: totalFolders });
 
   let completedFolders = 0;
 
   for (const versionFolderPath of versionFolderPaths) {
+    if (isCancelled) break;
     const version = path.basename(versionFolderPath);
     mainWindow.webContents.send('processing-update', {
       type: 'progress',
@@ -163,6 +197,7 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
       const videoFiles = [];
 
       for (const shotDirName of shotDirs) {
+        if (isCancelled) break;
         const shotFolderPath = path.join(versionFolderPath, shotDirName);
         console.log(`Processing shot folder: ${shotFolderPath}`);
 
@@ -178,7 +213,7 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
         console.log(`Found ${files.length} PNG files in ${shotDirName}`);
 
         const firstFile = files[0];
-        const match = firstFile.match(/(\d{4})(?=\.png$)/i);
+        let match = firstFile.match(/(\d{4})(?=\.png$)/i);
         if (!match) {
           const fallbackMatch = firstFile.match(/(\d+)(?=\.png$)/i);
           if (!fallbackMatch) {
@@ -215,14 +250,28 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
           console.warn(`Could not delete existing file ${outputPath}: ${e.message}`);
         }
 
-        const ffmpegCommand = `ffmpeg -framerate 24 -start_number ${startNumber} -i "${path.join(shotFolderPath, filePattern)}" -pix_fmt yuv420p "${outputPath}"`;
+        const ffmpegArgs = [
+          '-framerate',
+          '24',
+          '-start_number',
+          startNumber.toString(),
+          '-i',
+          path.join(shotFolderPath, filePattern),
+          '-pix_fmt',
+          'yuv420p',
+          outputPath,
+        ];
 
         try {
-          console.log(`Processing ${shotDirName}... Running command: ${ffmpegCommand}`);
-          await execPromise(ffmpegCommand);
-          console.log(`Created ${outputFile} in ${shotFolderPath}`);
-          videoFiles.push(outputPath);
+          console.log(
+            `Processing ${shotDirName}... Running command: ffmpeg ${ffmpegArgs.join(' ')}`,
+          );
+          await execFileCancellable('ffmpeg', ffmpegArgs);
         } catch (error) {
+          if (isCancelled) {
+            console.log(`Processing of ${shotDirName} was cancelled.`);
+            break; // Break from the shot-processing loop
+          }
           console.error(
             `Error processing ${shotDirName}:`,
             error.message,
@@ -232,8 +281,13 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
             type: 'error',
             message: `Error processing ${shotDirName}: ${error.message}`,
           });
+          continue; // Continue to the next shot directory
         }
+        console.log(`Created ${outputFile} in ${shotFolderPath}`);
+        videoFiles.push(outputPath);
       }
+
+      if (isCancelled) break;
 
       if (videoFiles.length > 0) {
         const listFile = path.join(versionFolderPath, 'temp_ffmpeg_list.txt');
@@ -255,13 +309,29 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
         } catch (e) {
           console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
         }
-        const combineCommand = `ffmpeg -f concat -safe 0 -i "${listFile}" -c copy "${combinedOutput}"`;
+
+        const combineArgs = [
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          listFile,
+          '-c',
+          'copy',
+          combinedOutput,
+        ];
+
         try {
           console.log('Creating combined video...');
-          console.log(`Running command: ${combineCommand}`);
-          await execPromise(combineCommand);
+          console.log(`Running command: ffmpeg ${combineArgs.join(' ')}`);
+          await execFileCancellable('ffmpeg', combineArgs);
           console.log(`Created ${combinedOutput}`);
         } catch (error) {
+          if (isCancelled) {
+            console.log('Video combination was cancelled.');
+            break; // Break from the main folder loop
+          }
           console.error('Error creating combined video:', error.message, error.stderr?.toString());
           mainWindow.webContents.send('processing-update', {
             type: 'error',
@@ -278,15 +348,21 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
         console.log('No video files were created, skipping combination.');
       }
     } catch (error) {
-      console.error('Error in process-sequence handler for folder:', versionFolderPath, error);
-      mainWindow.webContents.send('processing-update', {
-        type: 'error',
-        message: `An error occurred while processing ${version}: ${error.message}`,
-      });
+      if (!isCancelled) {
+        console.error('Error in process-sequence handler for folder:', versionFolderPath, error);
+        mainWindow.webContents.send('processing-update', {
+          type: 'error',
+          message: `An error occurred while processing ${version}: ${error.message}`,
+        });
+      }
     }
     completedFolders++;
   }
 
+  if (isCancelled) {
+    console.log('Processing was cancelled by the user.');
+  }
+
   mainWindow.webContents.send('processing-update', { type: 'end' });
-  console.log('All processing finished.');
+  console.log('All processing finished or was cancelled.');
 });

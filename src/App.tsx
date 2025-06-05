@@ -165,6 +165,11 @@ const App: React.FC = () => {
     window.electronAPI.processSequences(selectedFolders);
   };
 
+  const handleCancelProcessing = () => {
+    console.log('Requesting to cancel processing...');
+    window.electronAPI.cancelProcessing();
+  };
+
   const handleCloseModal = () => {
     setProcessingState({ ...processingState, showModal: false, error: '' });
   };
@@ -279,19 +284,30 @@ const App: React.FC = () => {
                 </Typography>
                 <LinearProgress
                   variant="determinate"
-                  value={(processingState.completed / processingState.total) * 100}
+                  value={
+                    processingState.total > 0
+                      ? (processingState.completed / processingState.total) * 100
+                      : 0
+                  }
                   sx={{ mb: 2 }}
                 />
                 <Typography align="right">
-                  {Math.round((processingState.completed / processingState.total) * 100)}%
+                  {processingState.total > 0
+                    ? Math.round((processingState.completed / processingState.total) * 100)
+                    : 0}
+                  %
                 </Typography>
               </>
             )}
-            {processingState.error && (
-              <Button onClick={handleCloseModal} sx={{ mt: 2 }}>
-                Close
-              </Button>
-            )}
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+              {processingState.error ? (
+                <Button onClick={handleCloseModal}>Close</Button>
+              ) : (
+                <Button onClick={handleCancelProcessing} color="secondary" variant="outlined">
+                  Cancel
+                </Button>
+              )}
+            </Box>
           </Box>
         </Modal>
       </Box>

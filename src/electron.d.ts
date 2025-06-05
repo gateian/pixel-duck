@@ -12,6 +12,7 @@ declare global {
         }>
       >;
       processSequences: (folderPaths: string[]) => void;
+      cancelProcessing: () => void;
       onProcessingUpdate: (
         callback: (update: {
           type: 'start' | 'progress' | 'end' | 'error';
