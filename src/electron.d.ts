@@ -13,9 +13,24 @@ declare global {
           hasVideo?: boolean;
           shotCount: number;
           frameCount: number;
+          panoramic?: boolean;
         }>
       >;
-      processSequences: (folderPaths: string[]) => void;
+      processSequences: (
+        folderPaths: string[],
+        options?: {
+          panoramic?: boolean;
+        },
+      ) => void;
+      getVersionSettings: (folderPath: string) => Promise<{
+        panoramic: boolean;
+      }>;
+      saveVersionSettings: (
+        folderPaths: string[],
+        settings: {
+          panoramic?: boolean;
+        },
+      ) => Promise<void>;
       cancelProcessing: () => void;
       onProcessingUpdate: (
         callback: (update: {

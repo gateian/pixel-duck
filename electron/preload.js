@@ -5,7 +5,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLastPath: () => ipcRenderer.invoke('get-last-path'),
   openFolderInExplorer: (folderPath) => ipcRenderer.invoke('open-folder-in-explorer', folderPath),
   findVersionFolders: (path) => ipcRenderer.invoke('find-version-folders', path),
-  processSequences: (folderPaths) => ipcRenderer.send('process-sequences', folderPaths),
+  processSequences: (folderPaths, options) =>
+    ipcRenderer.send('process-sequences', folderPaths, options),
+  getVersionSettings: (folderPath) => ipcRenderer.invoke('get-version-settings', folderPath),
+  saveVersionSettings: (folderPaths, settings) =>
+    ipcRenderer.invoke('save-version-settings', folderPaths, settings),
   cancelProcessing: () => ipcRenderer.send('cancel-processing'),
   onProcessingUpdate: (callback) => {
     const listener = (_event, value) => callback(value);

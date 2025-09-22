@@ -139,6 +139,63 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// Read per-version settings; returns defaults when not present
+ipcMain.handle('get-version-settings', async (_event, folderPath) => {
+  const defaults = { panoramic: false };
+  try {
+    const settingsPath = path.join(folderPath, 'pixelduck-settings.json');
+    const content = await fs.readFile(settingsPath, 'utf-8');
+    const parsed = JSON.parse(content);
+    return { ...defaults, ...parsed };
+  } catch (e) {
+    return defaults;
+  }
+});
+
+// Save per-version settings (only create file when something changes from defaults)
+// File: pixelduck-settings.json
+ipcMain.handle('save-version-settings', async (_event, folderPaths, settings) => {
+  const defaults = { panoramic: false };
+  const normalized = { panoramic: !!settings?.panoramic };
+  const fileName = 'pixelduck-settings.json';
+
+  await Promise.all(
+    folderPaths.map(async (folderPath) => {
+      try {
+        // Read existing if present
+        const settingsPath = path.join(folderPath, fileName);
+        let existing = null;
+        try {
+          const content = await fs.readFile(settingsPath, 'utf-8');
+          existing = JSON.parse(content);
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            console.warn(`Could not read settings for ${folderPath}:`, err.message);
+          }
+        }
+
+        const newSettings = { ...(existing || {}), ...normalized };
+
+        // If settings equal defaults and no file existed, skip creating.
+        const equalsDefaults = JSON.stringify(newSettings) === JSON.stringify(defaults);
+        if (!existing && equalsDefaults) {
+          return; // do not create file for defaults
+        }
+
+        // If file exists and contents are unchanged, skip writing
+        if (existing && JSON.stringify(existing) === JSON.stringify(newSettings)) {
+          return;
+        }
+
+        await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2), 'utf-8');
+      } catch (e) {
+        console.error(`Failed saving settings in ${folderPath}:`, e.message);
+        // Swallow errors to avoid breaking UI flow
+      }
+    }),
+  );
+});
+
 // Handle folder selection
 ipcMain.handle('dialog:openDirectory', async () => {
   const result = await dialog.showOpenDialog({
@@ -198,11 +255,21 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
 
             let shotCount = 0;
             let frameCount = 0;
+            let panoramic = false;
             try {
               const sequence = await findImageSequenceRecursive(fullPath);
               if (sequence) {
                 shotCount = 1;
                 frameCount = sequence.frameCount;
+              }
+              // Load settings to expose panoramic flag in listing
+              try {
+                const settingsPath = path.join(fullPath, 'pixelduck-settings.json');
+                const content = await fs.readFile(settingsPath, 'utf-8');
+                const parsed = JSON.parse(content);
+                panoramic = !!parsed?.panoramic;
+              } catch (e) {
+                // ignore
               }
             } catch (e) {
               console.error(`Error analyzing folder contents for ${fullPath}:`, e);
@@ -214,6 +281,7 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
               hasVideo: hasVideo,
               shotCount,
               frameCount,
+              panoramic,
             });
           } else {
             // If it's not a version folder, search inside it
@@ -255,7 +323,7 @@ ipcMain.on('cancel-processing', () => {
 });
 
 // Handle processing image sequence to video
-ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
+ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) => {
   console.log(`Received request to process ${versionFolderPaths.length} sequences.`);
   isCancelled = false; // Reset cancellation flag on new job
   const totalFolders = versionFolderPaths.length;
@@ -305,6 +373,51 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
         console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
       }
 
+      // Load per-folder settings (if any) and merge with incoming options
+      let panoramic = false;
+      try {
+        const settingsPath = path.join(versionFolderPath, 'pixelduck-settings.json');
+        const content = await fs.readFile(settingsPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        panoramic = !!parsed?.panoramic;
+      } catch (e) {
+        // ignore missing file or parse errors; fall back to options
+      }
+      if (options && typeof options.panoramic === 'boolean') {
+        panoramic = !!options.panoramic;
+      }
+
+      // High-quality encoding defaults
+      const qualityArgs = [
+        '-c:v',
+        'libx264',
+        '-crf',
+        '18',
+        '-preset',
+        'slow',
+        '-pix_fmt',
+        'yuv420p',
+      ];
+
+      // VR equirectangular metadata and parameters for flat 360 video
+      // We set spherical video metadata so headsets recognize it as 360.
+      const vrMetadataArgs = panoramic
+        ? [
+            '-vf',
+            // Ensure no resizing by default; if input is already equirect, we just pass through.
+            // Users can resize upstream if needed. Keeping original width/height preserves quality.
+            'scale=iw:ih',
+            '-metadata',
+            'spherical-video=true',
+            '-metadata',
+            'stereo=mono',
+            '-metadata',
+            'projection=equirectangular',
+            '-movflags',
+            '+faststart',
+          ]
+        : ['-movflags', '+faststart'];
+
       const ffmpegArgs = [
         '-framerate',
         '24',
@@ -312,8 +425,8 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
         sequence.startNumber.toString(),
         '-i',
         inputPatternFullPath,
-        '-pix_fmt',
-        'yuv420p',
+        ...qualityArgs,
+        ...vrMetadataArgs,
         combinedOutput,
       ];
 

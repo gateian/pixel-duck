@@ -17,11 +17,19 @@ import {
   IconButton,
   Divider,
 } from '@mui/material';
+// removed bottom bar checkbox
+import SettingsIcon from '@mui/icons-material/Settings';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Switch from '@mui/material/Switch';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import MovieIcon from '@mui/icons-material/Movie';
 import Header from './components/header';
 import FolderIcon from '@mui/icons-material/Folder';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import PanoramaIcon from '@mui/icons-material/Panorama';
 
 const theme = createTheme({
   palette: {
@@ -40,6 +48,7 @@ interface VersionFolder {
   hasVideo?: boolean;
   shotCount: number;
   frameCount: number;
+  panoramic?: boolean;
 }
 
 interface GroupedVersionFolders {
@@ -59,6 +68,9 @@ const App: React.FC = () => {
     currentFolder: '',
     error: '',
   });
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState<boolean>(false);
+  const [settingsTargetFolder, setSettingsTargetFolder] = useState<string>('');
+  const [dialogPanoramic, setDialogPanoramic] = useState<boolean>(false);
 
   const groupVersionFoldersByParent = useCallback(
     (folders: VersionFolder[]): GroupedVersionFolders[] => {
@@ -169,19 +181,45 @@ const App: React.FC = () => {
   }, [chooseDirectory]);
 
   const handleFolderSelect = (folderPath: string) => {
-    setSelectedFolders((prevSelected) =>
-      prevSelected.includes(folderPath)
-        ? prevSelected.filter((p) => p !== folderPath)
-        : [...prevSelected, folderPath],
-    );
+    setSelectedFolders((prevSelected) => (prevSelected.includes(folderPath) ? [] : [folderPath]));
+  };
+
+  const openSettingsDialog = async (e: React.MouseEvent, folderPath: string) => {
+    e.stopPropagation();
+    setSettingsTargetFolder(folderPath);
+    try {
+      const settings = await window.electronAPI.getVersionSettings(folderPath);
+      setDialogPanoramic(!!settings.panoramic);
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+      setDialogPanoramic(false);
+    }
+    setSettingsDialogOpen(true);
+  };
+
+  const closeSettingsDialog = () => {
+    setSettingsDialogOpen(false);
+  };
+
+  const saveSettingsDialog = async () => {
+    if (settingsTargetFolder) {
+      try {
+        await window.electronAPI.saveVersionSettings([settingsTargetFolder], {
+          panoramic: dialogPanoramic,
+        });
+      } catch (err) {
+        console.error('Failed to save settings:', err);
+      }
+    }
+    setSettingsDialogOpen(false);
   };
 
   const handleProcessSelectedSequences = async () => {
-    if (selectedFolders.length === 0) {
-      alert('No version folders selected.');
+    if (selectedFolders.length !== 1) {
+      alert('Please select exactly one version folder.');
       return;
     }
-    window.electronAPI.processSequences(selectedFolders);
+    window.electronAPI.processSequences(selectedFolders, {});
   };
 
   const handleCancelProcessing = () => {
@@ -223,13 +261,17 @@ const App: React.FC = () => {
                   {group.paths.map((folder) => (
                     <Grid item key={folder.path} xs={12} sm={6} md={4} lg={3}>
                       <Paper
-                        elevation={selectedFolders.includes(folder.path) ? 8 : 2}
+                        elevation={
+                          selectedFolders.includes(folder.path) ? 8 : folder.hasVideo ? 6 : 2
+                        }
                         sx={{
                           p: 2,
                           cursor: 'pointer',
                           border: selectedFolders.includes(folder.path)
                             ? `2px solid ${theme.palette.primary.main}`
-                            : '2px solid transparent',
+                            : folder.hasVideo
+                              ? `2px solid ${theme.palette.success.light}`
+                              : '2px solid transparent',
                           '&:hover': {
                             borderColor: theme.palette.primary.light,
                             boxShadow: selectedFolders.includes(folder.path)
@@ -237,6 +279,7 @@ const App: React.FC = () => {
                               : theme.shadows[4],
                           },
                           transition: 'border-color 0.2s, box-shadow 0.2s, elevation 0.2s',
+                          backgroundColor: folder.hasVideo ? 'action.hover' : 'background.paper',
                         }}
                         onClick={() => handleFolderSelect(folder.path)}
                       >
@@ -277,18 +320,49 @@ const App: React.FC = () => {
                                 <FolderIcon />
                               </IconButton>
                             </Tooltip>
-                            {folder.hasVideo && (
-                              <Tooltip title="Video generated already" arrow>
-                                <MovieIcon color="action" />
-                              </Tooltip>
-                            )}
+                            <Tooltip title="Settings" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => openSettingsDialog(e, folder.path)}
+                                sx={{
+                                  '& svg': {
+                                    color: 'action.active',
+                                    transition: 'color 0.2s',
+                                  },
+                                  '&:hover svg': {
+                                    color: 'primary.main',
+                                  },
+                                }}
+                              >
+                                <SettingsIcon />
+                              </IconButton>
+                            </Tooltip>
                           </Box>
                         </Box>
                         <Divider sx={{ my: 1, width: '100%' }} />
-                        <Box sx={{ width: '100%', textAlign: 'left' }}>
+                        <Box
+                          sx={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
                           <Typography variant="body2" color="text.secondary">
                             Shots: {folder.shotCount} | Frames: {folder.frameCount}
                           </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {folder.panoramic && (
+                              <Tooltip title="Panoramic (360) enabled" arrow>
+                                <PanoramaIcon color="action" />
+                              </Tooltip>
+                            )}
+                            {folder.hasVideo && (
+                              <Tooltip title="Video generated" arrow>
+                                <CheckCircleOutlineIcon color="action" />
+                              </Tooltip>
+                            )}
+                          </Box>
                         </Box>
                       </Paper>
                     </Grid>
@@ -303,12 +377,12 @@ const App: React.FC = () => {
           color="default"
           sx={{ top: 'auto', bottom: 0, backgroundColor: theme.palette.background.paper }}
         >
-          <Toolbar sx={{ justifyContent: 'center' }}>
+          <Toolbar sx={{ justifyContent: 'center', gap: 2 }}>
             <Button
               variant="contained"
               color="primary"
               onClick={handleProcessSelectedSequences}
-              disabled={selectedFolders.length === 0}
+              disabled={selectedFolders.length !== 1}
               size="large"
             >
               Create Video for Selected ({selectedFolders.length})
@@ -370,6 +444,25 @@ const App: React.FC = () => {
             </Box>
           </Box>
         </Modal>
+        <Dialog open={settingsDialogOpen} onClose={closeSettingsDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>Settings</DialogTitle>
+          <DialogContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography>Panoramic (360 equirectangular)</Typography>
+              <Switch
+                checked={dialogPanoramic}
+                onChange={(e) => setDialogPanoramic(e.target.checked)}
+                color="primary"
+              />
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeSettingsDialog}>Cancel</Button>
+            <Button onClick={saveSettingsDialog} variant="contained">
+              Save
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </ThemeProvider>
   );
