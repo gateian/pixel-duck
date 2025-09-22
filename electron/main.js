@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const Store = require('electron-store');
 
 const store = new Store();
@@ -37,6 +37,77 @@ const execFileCancellable = (command, args) => {
   });
 };
 
+// Spawn ffmpeg with progress reporting using -progress pipe:1
+// Emits progress via onProgress callback as a fraction [0,1]
+const runFfmpegWithProgress = (args, totalFrames, onProgress) => {
+  return new Promise((resolve, reject) => {
+    if (isCancelled) return reject(new Error('Cancelled'));
+
+    const proc = spawn('ffmpeg', args, { windowsHide: true });
+    childProcess = proc;
+
+    let stdoutBuffer = '';
+    proc.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk.toString();
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() || '';
+
+      let current = {};
+      for (const line of lines) {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          const key = line.slice(0, idx).trim();
+          const value = line.slice(idx + 1).trim();
+          current[key] = value;
+        }
+        if (line.startsWith('progress=')) {
+          // End of a progress block
+          // Compute fraction using frame or out_time_ms
+          let fraction = 0;
+          const frameNum = parseInt(current['frame'] || current['frames'] || '0', 10);
+          if (Number.isFinite(frameNum) && frameNum > 0 && totalFrames > 0) {
+            fraction = Math.min(frameNum / totalFrames, 1);
+          } else if (current['out_time_ms']) {
+            const outTimeMs = parseInt(current['out_time_ms'], 10);
+            if (Number.isFinite(outTimeMs) && totalFrames > 0) {
+              // Estimate duration from frames and a default 24 fps
+              const durationMs = (totalFrames / 24) * 1000;
+              fraction = Math.min(outTimeMs / durationMs, 1);
+            }
+          }
+          try {
+            if (typeof onProgress === 'function')
+              onProgress(fraction, Number.isFinite(frameNum) ? frameNum : undefined);
+          } catch (_) {}
+          current = {};
+        }
+      }
+    });
+
+    let stderrBuffer = '';
+    proc.stderr.on('data', (chunk) => {
+      // Keep for debugging if needed; avoid flooding logs
+      stderrBuffer += chunk.toString();
+    });
+
+    proc.on('error', (err) => {
+      childProcess = null;
+      reject(err);
+    });
+
+    proc.on('close', (code, signal) => {
+      childProcess = null;
+      if (isCancelled) return reject(new Error('Cancelled'));
+      if (code === 0) resolve({ code });
+      else {
+        const error = new Error(`ffmpeg exited with code ${code} signal ${signal || ''}`.trim());
+        error.stderr = stderrBuffer;
+        reject(error);
+      }
+    });
+  });
+};
+
 // Recursively search for a single image sequence inside a directory tree.
 // A valid sequence has files matching <base>.<xxxx>.<ext> (xxxx >= 4 digits),
 // contains frame 0000, and has at least 20 frames in total.
@@ -47,7 +118,7 @@ async function findImageSequenceRecursive(rootDir) {
 
     // First, try to detect a sequence in this directory
     const files = entries.filter((e) => !e.isDirectory()).map((e) => e.name);
-    const groups = new Map(); // key: base|ext|digits -> { indices:Set<number>, base, ext, digits }
+    const groups = new Map(); // key: base|ext -> { indices:Set<number>, base, ext, digits:number }
 
     for (const fileName of files) {
       const match = fileName.match(IMAGE_SEQUENCE_REGEX);
@@ -55,13 +126,17 @@ async function findImageSequenceRecursive(rootDir) {
       const base = match[1];
       const numberStr = match[2];
       const ext = match[3].toLowerCase();
-      const digits = numberStr.length;
       const index = parseInt(numberStr, 10);
-      const key = `${base}|${ext}|${digits}`;
+      const key = `${base}|${ext}`;
       if (!groups.has(key)) {
-        groups.set(key, { indices: new Set(), base, ext, digits });
+        groups.set(key, { indices: new Set(), base, ext, digits: 0 });
       }
-      groups.get(key).indices.add(index);
+      const group = groups.get(key);
+      group.indices.add(index);
+      // Track zero padding width using the length of the numeric substring for index 0
+      if (index === 0) {
+        group.digits = Math.max(group.digits, numberStr.length);
+      }
     }
 
     for (const group of groups.values()) {
@@ -70,7 +145,7 @@ async function findImageSequenceRecursive(rootDir) {
           directory: currentDir,
           baseName: group.base,
           ext: group.ext,
-          digits: group.digits,
+          digits: group.digits || 4,
           startNumber: 0,
           frameCount: group.indices.size,
         };
@@ -369,8 +444,37 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         continue;
       }
 
-      const filePattern = `${sequence.baseName}.%0${sequence.digits}d.${sequence.ext}`;
-      const inputPatternFullPath = path.join(sequence.directory, filePattern);
+      // Build explicit list of frame files (sorted by index) to handle gaps and mixed padding
+      const seqEntries = await fs.readdir(sequence.directory, { withFileTypes: true });
+      const matchedFrames = seqEntries
+        .filter((e) => !e.isDirectory())
+        .map((e) => e.name)
+        .map((name) => {
+          const m = name.match(IMAGE_SEQUENCE_REGEX);
+          if (!m) return null;
+          const base = m[1];
+          const ext = m[3].toLowerCase();
+          if (base !== sequence.baseName || ext !== sequence.ext.toLowerCase()) return null;
+          return { name, index: parseInt(m[2], 10) };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.index - b.index)
+        .map((f) => path.join(sequence.directory, f.name));
+
+      const frameFiles = matchedFrames;
+      if (frameFiles.length < 20) {
+        throw new Error('Not enough frames after listing actual files.');
+      }
+
+      // Create concat demuxer list with per-frame durations at 24 fps
+      const imagesListPath = path.join(versionFolderPath, 'temp_ffmpeg_images_list.txt');
+      const frameDuration = (1 / 24).toFixed(6);
+      const escapePath = (p) => p.replace(/'/g, "'\\''");
+      const listBody = frameFiles
+        .map((full) => `file '${escapePath(full)}'\n` + `duration ${frameDuration}`)
+        .join('\n');
+      const listContent = `${listBody}\nfile '${escapePath(frameFiles[frameFiles.length - 1])}'`;
+      await fs.writeFile(imagesListPath, listContent, 'utf-8');
       const combinedOutput = path.join(versionFolderPath, 'all_shots_combined.mp4');
 
       try {
@@ -464,22 +568,39 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         (audioFilesInSequenceDir.length === 1 ? audioFilesInSequenceDir[0] : null);
 
       const ffmpegArgs = [
-        '-framerate',
-        '24',
-        '-start_number',
-        sequence.startNumber.toString(),
+        '-v',
+        'error',
+        '-hide_banner',
+        '-f',
+        'concat',
+        '-safe',
+        '0',
         '-i',
-        inputPatternFullPath,
-        ...(selectedAudio ? ['-i', selectedAudio, '-shortest'] : []),
+        imagesListPath,
+        ...(selectedAudio ? ['-i', selectedAudio] : []),
+        '-progress',
+        'pipe:1',
+        '-stats_period',
+        '0.5',
         ...qualityArgs,
         ...vrMetadataArgs,
-        ...(selectedAudio ? ['-c:a', 'aac', '-b:a', '192k'] : []),
+        ...(selectedAudio ? ['-c:a', 'aac', '-b:a', '192k', '-af', 'apad', '-shortest'] : []),
         combinedOutput,
       ];
 
       try {
         console.log(`Running command: ffmpeg ${ffmpegArgs.join(' ')}`);
-        await execFileCancellable('ffmpeg', ffmpegArgs);
+        await runFfmpegWithProgress(ffmpegArgs, frameFiles.length, (fraction, framesProcessed) => {
+          if (isCancelled) return;
+          mainWindow.webContents.send('processing-update', {
+            type: 'progress',
+            completed: completedFolders + fraction,
+            total: totalFolders,
+            currentFolder: version,
+            framesProcessed: typeof framesProcessed === 'number' ? framesProcessed : undefined,
+            framesTotal: frameFiles.length,
+          });
+        });
         console.log(`Created ${combinedOutput}`);
       } catch (error) {
         if (isCancelled) {
@@ -491,6 +612,10 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
           type: 'error',
           message: `Error creating video for ${version}: ${error.message}`,
         });
+      } finally {
+        try {
+          await fs.unlink(imagesListPath);
+        } catch (_) {}
       }
     } catch (error) {
       if (!isCancelled) {

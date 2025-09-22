@@ -45,6 +45,8 @@ declare global {
           completed?: number;
           currentFolder?: string;
           message?: string;
+          framesProcessed?: number;
+          framesTotal?: number;
         }) => void,
       ) => () => void;
     };

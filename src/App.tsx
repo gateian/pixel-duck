@@ -69,6 +69,9 @@ const App: React.FC = () => {
     completed: 0,
     currentFolder: '',
     error: '',
+    framesProcessed: 0 as number | undefined,
+    framesTotal: 0 as number | undefined,
+    finished: false,
   });
   const [settingsDialogOpen, setSettingsDialogOpen] = useState<boolean>(false);
   const [settingsTargetFolder, setSettingsTargetFolder] = useState<string>('');
@@ -152,6 +155,9 @@ const App: React.FC = () => {
             completed: 0,
             currentFolder: '',
             error: '',
+            framesProcessed: undefined,
+            framesTotal: undefined,
+            finished: false,
           });
           break;
         case 'progress':
@@ -161,16 +167,25 @@ const App: React.FC = () => {
             completed: update.completed || prevState.completed,
             total: update.total || prevState.total,
             currentFolder: update.currentFolder || prevState.currentFolder,
+            framesProcessed:
+              typeof update.framesProcessed === 'number'
+                ? update.framesProcessed
+                : prevState.framesProcessed,
+            framesTotal:
+              typeof update.framesTotal === 'number' ? update.framesTotal : prevState.framesTotal,
           }));
           break;
         case 'end':
-          setProcessingState({
-            showModal: false,
-            total: 0,
-            completed: 0,
-            currentFolder: '',
+          setProcessingState((prev) => ({
+            ...prev,
+            showModal: true,
+            completed: prev.total,
+            currentFolder: prev.currentFolder,
             error: '',
-          });
+            framesProcessed:
+              prev.framesTotal !== undefined ? prev.framesTotal : prev.framesProcessed,
+            finished: true,
+          }));
           // Optionally, refresh folder status
           chooseDirectory(true);
           break;
@@ -477,8 +492,20 @@ const App: React.FC = () => {
             ) : (
               <>
                 <Typography sx={{ mb: 1 }}>
-                  Processing {processingState.completed + 1} of {processingState.total}:{' '}
-                  {processingState.currentFolder}
+                  {processingState.finished ? (
+                    <>Done.</>
+                  ) : processingState.framesProcessed !== undefined &&
+                    processingState.framesTotal !== undefined ? (
+                    <>
+                      Processed frames: {processingState.framesProcessed}/
+                      {processingState.framesTotal}
+                    </>
+                  ) : (
+                    <>
+                      Processing {processingState.completed + 1} of {processingState.total}:{' '}
+                      {processingState.currentFolder}
+                    </>
+                  )}
                 </Typography>
                 <LinearProgress
                   variant="determinate"
@@ -498,7 +525,7 @@ const App: React.FC = () => {
               </>
             )}
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-              {processingState.error ? (
+              {processingState.error || processingState.finished ? (
                 <Button onClick={handleCloseModal}>Close</Button>
               ) : (
                 <Button onClick={handleCancelProcessing} color="secondary" variant="outlined">
