@@ -51,6 +51,7 @@ interface VersionFolder {
   frameCount: number;
   panoramic?: boolean;
   audioCount?: number;
+  frameRate?: number;
 }
 
 interface GroupedVersionFolders {
@@ -76,6 +77,7 @@ const App: React.FC = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState<boolean>(false);
   const [settingsTargetFolder, setSettingsTargetFolder] = useState<string>('');
   const [dialogPanoramic, setDialogPanoramic] = useState<boolean>(false);
+  const [dialogFrameRate, setDialogFrameRate] = useState<number>(24);
   const [audioDialogOpen, setAudioDialogOpen] = useState<boolean>(false);
   const [audioOptions, setAudioOptions] = useState<{ files: string[]; directory: string | null }>({
     files: [],
@@ -213,9 +215,11 @@ const App: React.FC = () => {
     try {
       const settings = await window.electronAPI.getVersionSettings(folderPath);
       setDialogPanoramic(!!settings.panoramic);
+      setDialogFrameRate(Number(settings.frameRate) || 24);
     } catch (err) {
       console.error('Failed to load settings:', err);
       setDialogPanoramic(false);
+      setDialogFrameRate(24);
     }
     setSettingsDialogOpen(true);
   };
@@ -230,6 +234,7 @@ const App: React.FC = () => {
         await window.electronAPI.saveVersionSettings([settingsTargetFolder], {
           panoramic: dialogPanoramic,
           audioFile: selectedAudioFile || undefined,
+          frameRate: dialogFrameRate,
         });
       } catch (err) {
         console.error('Failed to save settings:', err);
@@ -279,6 +284,19 @@ const App: React.FC = () => {
 
   const handleCloseModal = () => {
     setProcessingState({ ...processingState, showModal: false, error: '' });
+  };
+
+  const formatDuration = (frameCount: number, frameRate: number) => {
+    // Takes frameCount and frameRate, returns "hh:mm:ss"
+    if (!Number.isFinite(frameCount) || !Number.isFinite(frameRate) || frameRate <= 0) {
+      return '00:00:00';
+    }
+    const totalSeconds = Math.floor(frameCount / frameRate);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   };
 
   return (
@@ -437,8 +455,9 @@ const App: React.FC = () => {
                             </Box>
                             <Divider sx={{ my: 1, width: '100%' }} />
                             <Box sx={{ width: '100%', textAlign: 'left' }}>
-                              <Typography variant="body2" color="text.secondary">
-                                Shots: {folder.shotCount} | Frames: {folder.frameCount}
+                              <Typography variant="body2" color="text.secondary" fontSize="0.75rem">
+                                Frames: {folder.frameCount} @ {folder.frameRate} fps (
+                                {formatDuration(folder.frameCount, folder.frameRate || 0)})
                               </Typography>
                             </Box>
                           </Box>
@@ -544,6 +563,30 @@ const App: React.FC = () => {
                 checked={dialogPanoramic}
                 onChange={(e) => setDialogPanoramic(e.target.checked)}
                 color="primary"
+              />
+            </Box>
+            <Box
+              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2 }}
+            >
+              <Typography>Frame rate (fps)</Typography>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={dialogFrameRate}
+                onChange={(e) =>
+                  setDialogFrameRate(() => {
+                    const n = Math.round(Number(e.target.value));
+                    if (!Number.isFinite(n)) return 24;
+                    return Math.max(1, Math.min(120, n));
+                  })
+                }
+                style={{
+                  width: 80,
+                  padding: 6,
+                  borderRadius: 4,
+                  border: '1px solid rgba(0,0,0,0.23)',
+                }}
               />
             </Box>
           </DialogContent>

@@ -220,7 +220,7 @@ app.on('window-all-closed', function () {
 
 // Read per-version settings; returns defaults when not present
 ipcMain.handle('get-version-settings', async (_event, folderPath) => {
-  const defaults = { panoramic: false };
+  const defaults = { panoramic: false, frameRate: 24 };
   try {
     const settingsPath = path.join(folderPath, 'pixelduck-settings.json');
     const content = await fs.readFile(settingsPath, 'utf-8');
@@ -234,8 +234,11 @@ ipcMain.handle('get-version-settings', async (_event, folderPath) => {
 // Save per-version settings (only create file when something changes from defaults)
 // File: pixelduck-settings.json
 ipcMain.handle('save-version-settings', async (_event, folderPaths, settings) => {
-  const defaults = { panoramic: false };
-  const normalized = { panoramic: !!settings?.panoramic };
+  const defaults = { panoramic: false, frameRate: 24 };
+  let frameRate = Number(settings?.frameRate);
+  if (!Number.isFinite(frameRate)) frameRate = defaults.frameRate;
+  frameRate = Math.max(1, Math.min(120, Math.round(frameRate)));
+  const normalized = { panoramic: !!settings?.panoramic, frameRate };
   const fileName = 'pixelduck-settings.json';
 
   await Promise.all(
@@ -335,6 +338,7 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
             let shotCount = 0;
             let frameCount = 0;
             let panoramic = false;
+            let frameRate = 24;
             let audioCount = 0;
             try {
               const sequence = await findImageSequenceRecursive(fullPath);
@@ -356,6 +360,9 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
                 const content = await fs.readFile(settingsPath, 'utf-8');
                 const parsed = JSON.parse(content);
                 panoramic = !!parsed?.panoramic;
+                if (Number.isFinite(Number(parsed?.frameRate))) {
+                  frameRate = Math.max(1, Math.min(120, Math.round(Number(parsed.frameRate))));
+                }
               } catch (e) {
                 // ignore
               }
@@ -371,6 +378,7 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
               frameCount,
               panoramic,
               audioCount,
+              frameRate,
             });
           } else {
             // If it's not a version folder, search inside it
@@ -466,9 +474,26 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         throw new Error('Not enough frames after listing actual files.');
       }
 
-      // Create concat demuxer list with per-frame durations at 24 fps
+      // Create concat demuxer list with per-frame durations at configured fps
       const imagesListPath = path.join(versionFolderPath, 'temp_ffmpeg_images_list.txt');
-      const frameDuration = (1 / 24).toFixed(6);
+      // Load per-folder settings (if any) and merge with incoming options
+      let panoramic = false;
+      let frameRate = 24;
+      try {
+        const settingsPath = path.join(versionFolderPath, 'pixelduck-settings.json');
+        const content = await fs.readFile(settingsPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        panoramic = !!parsed?.panoramic;
+        if (Number.isFinite(Number(parsed?.frameRate))) {
+          frameRate = Math.max(1, Math.min(120, Math.round(Number(parsed.frameRate))));
+        }
+      } catch (e) {
+        // ignore missing file or parse errors; fall back to options
+      }
+      if (options && typeof options.panoramic === 'boolean') {
+        panoramic = !!options.panoramic;
+      }
+      const frameDuration = (1 / frameRate).toFixed(6);
       const escapePath = (p) => p.replace(/'/g, "'\\''");
       const listBody = frameFiles
         .map((full) => `file '${escapePath(full)}'\n` + `duration ${frameDuration}`)
@@ -491,19 +516,7 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
       }
 
-      // Load per-folder settings (if any) and merge with incoming options
-      let panoramic = false;
-      try {
-        const settingsPath = path.join(versionFolderPath, 'pixelduck-settings.json');
-        const content = await fs.readFile(settingsPath, 'utf-8');
-        const parsed = JSON.parse(content);
-        panoramic = !!parsed?.panoramic;
-      } catch (e) {
-        // ignore missing file or parse errors; fall back to options
-      }
-      if (options && typeof options.panoramic === 'boolean') {
-        panoramic = !!options.panoramic;
-      }
+      // panoramic already resolved above
 
       // High-quality encoding defaults
       const qualityArgs = [
@@ -582,6 +595,8 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         'pipe:1',
         '-stats_period',
         '0.5',
+        '-r',
+        String(frameRate),
         ...qualityArgs,
         ...vrMetadataArgs,
         ...(selectedAudio ? ['-c:a', 'aac', '-b:a', '192k', '-af', 'apad', '-shortest'] : []),

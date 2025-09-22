@@ -15,6 +15,7 @@ declare global {
           frameCount: number;
           panoramic?: boolean;
           audioCount?: number;
+          frameRate?: number;
         }>
       >;
       processSequences: (
@@ -25,12 +26,14 @@ declare global {
       ) => void;
       getVersionSettings: (folderPath: string) => Promise<{
         panoramic: boolean;
+        frameRate: number;
       }>;
       saveVersionSettings: (
         folderPaths: string[],
         settings: {
           panoramic?: boolean;
           audioFile?: string;
+          frameRate?: number;
         },
       ) => Promise<void>;
       listAudioFiles: (folderPath: string) => Promise<{
