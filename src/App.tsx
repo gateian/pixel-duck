@@ -27,7 +27,7 @@ import Switch from '@mui/material/Switch';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import Header from './components/header';
 import FolderIcon from '@mui/icons-material/Folder';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+// removed selection tick icon
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import PanoramaIcon from '@mui/icons-material/Panorama';
 
@@ -261,17 +261,13 @@ const App: React.FC = () => {
                   {group.paths.map((folder) => (
                     <Grid item key={folder.path} xs={12} sm={6} md={4} lg={3}>
                       <Paper
-                        elevation={
-                          selectedFolders.includes(folder.path) ? 8 : folder.hasVideo ? 6 : 2
-                        }
+                        elevation={selectedFolders.includes(folder.path) ? 8 : 2}
                         sx={{
-                          p: 2,
+                          p: 0,
                           cursor: 'pointer',
                           border: selectedFolders.includes(folder.path)
                             ? `2px solid ${theme.palette.primary.main}`
-                            : folder.hasVideo
-                              ? `2px solid ${theme.palette.success.light}`
-                              : '2px solid transparent',
+                            : '2px solid transparent',
                           '&:hover': {
                             borderColor: theme.palette.primary.light,
                             boxShadow: selectedFolders.includes(folder.path)
@@ -279,89 +275,91 @@ const App: React.FC = () => {
                               : theme.shadows[4],
                           },
                           transition: 'border-color 0.2s, box-shadow 0.2s, elevation 0.2s',
-                          backgroundColor: folder.hasVideo ? 'action.hover' : 'background.paper',
                         }}
                         onClick={() => handleFolderSelect(folder.path)}
                       >
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            width: '100%',
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            {selectedFolders.includes(folder.path) ? (
-                              <CheckCircleIcon color="primary" sx={{ mr: 1 }} />
+                        <Box sx={{ display: 'flex', width: '100%' }}>
+                          <Box
+                            sx={{
+                              width: 36,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              py: 1,
+                              backgroundColor: folder.hasVideo ? '#4A148C' : '#ccc',
+                            }}
+                          >
+                            {folder.hasVideo ? (
+                              <Tooltip title="Video generated" arrow>
+                                <CheckCircleOutlineIcon sx={{ color: '#fff' }} />
+                              </Tooltip>
                             ) : (
-                              <Box sx={{ width: 24, height: 24, mr: 1 }} />
+                              <Box sx={{ height: 24 }} />
                             )}
-                            <Typography variant="subtitle1">{folder.version}</Typography>
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Tooltip title="Open location" arrow>
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  window.electronAPI.openFolderInExplorer(folder.path);
-                                }}
-                                sx={{
-                                  '& svg': {
-                                    color: 'action.active',
-                                    transition: 'color 0.2s',
-                                  },
-                                  '&:hover svg': {
-                                    color: 'primary.main',
-                                  },
-                                }}
-                              >
-                                <FolderIcon />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Settings" arrow>
-                              <IconButton
-                                size="small"
-                                onClick={(e) => openSettingsDialog(e, folder.path)}
-                                sx={{
-                                  '& svg': {
-                                    color: 'action.active',
-                                    transition: 'color 0.2s',
-                                  },
-                                  '&:hover svg': {
-                                    color: 'primary.main',
-                                  },
-                                }}
-                              >
-                                <SettingsIcon />
-                              </IconButton>
-                            </Tooltip>
-                          </Box>
-                        </Box>
-                        <Divider sx={{ my: 1, width: '100%' }} />
-                        <Box
-                          sx={{
-                            width: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                          }}
-                        >
-                          <Typography variant="body2" color="text.secondary">
-                            Shots: {folder.shotCount} | Frames: {folder.frameCount}
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             {folder.panoramic && (
                               <Tooltip title="Panoramic (360) enabled" arrow>
-                                <PanoramaIcon color="action" />
+                                <PanoramaIcon sx={{ color: '#fff', mt: 1 }} />
                               </Tooltip>
                             )}
-                            {folder.hasVideo && (
-                              <Tooltip title="Video generated" arrow>
-                                <CheckCircleOutlineIcon color="action" />
-                              </Tooltip>
-                            )}
+                          </Box>
+                          <Box sx={{ flex: 1, p: 2 }}>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                width: '100%',
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Typography variant="subtitle1">{folder.version}</Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Tooltip title="Open location" arrow>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      window.electronAPI.openFolderInExplorer(folder.path);
+                                    }}
+                                    sx={{
+                                      '& svg': {
+                                        color: 'action.active',
+                                        transition: 'color 0.2s',
+                                      },
+                                      '&:hover svg': {
+                                        color: 'primary.main',
+                                      },
+                                    }}
+                                  >
+                                    <FolderIcon />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Settings" arrow>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => openSettingsDialog(e, folder.path)}
+                                    sx={{
+                                      '& svg': {
+                                        color: 'action.active',
+                                        transition: 'color 0.2s',
+                                      },
+                                      '&:hover svg': {
+                                        color: 'primary.main',
+                                      },
+                                    }}
+                                  >
+                                    <SettingsIcon />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                            <Divider sx={{ my: 1, width: '100%' }} />
+                            <Box sx={{ width: '100%', textAlign: 'left' }}>
+                              <Typography variant="body2" color="text.secondary">
+                                Shots: {folder.shotCount} | Frames: {folder.frameCount}
+                              </Typography>
+                            </Box>
                           </Box>
                         </Box>
                       </Paper>
