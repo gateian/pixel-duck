@@ -11,6 +11,9 @@ let mainWindow;
 let childProcess = null;
 let isCancelled = false;
 
+// Image sequence detection config
+const IMAGE_SEQUENCE_REGEX = /^(.+)\.(\d{4,})\.(png|jpe?g)$/i; // <name>.<0000+>.<ext>
+
 const execFileCancellable = (command, args) => {
   return new Promise((resolve, reject) => {
     if (isCancelled) {
@@ -33,6 +36,65 @@ const execFileCancellable = (command, args) => {
     });
   });
 };
+
+// Recursively search for a single image sequence inside a directory tree.
+// A valid sequence has files matching <base>.<xxxx>.<ext> (xxxx >= 4 digits),
+// contains frame 0000, and has at least 20 frames in total.
+// Returns null if none found.
+async function findImageSequenceRecursive(rootDir) {
+  async function scanDir(currentDir) {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+
+    // First, try to detect a sequence in this directory
+    const files = entries.filter((e) => !e.isDirectory()).map((e) => e.name);
+    const groups = new Map(); // key: base|ext|digits -> { indices:Set<number>, base, ext, digits }
+
+    for (const fileName of files) {
+      const match = fileName.match(IMAGE_SEQUENCE_REGEX);
+      if (!match) continue;
+      const base = match[1];
+      const numberStr = match[2];
+      const ext = match[3].toLowerCase();
+      const digits = numberStr.length;
+      const index = parseInt(numberStr, 10);
+      const key = `${base}|${ext}|${digits}`;
+      if (!groups.has(key)) {
+        groups.set(key, { indices: new Set(), base, ext, digits });
+      }
+      groups.get(key).indices.add(index);
+    }
+
+    for (const group of groups.values()) {
+      if (group.indices.has(0) && group.indices.size >= 20) {
+        return {
+          directory: currentDir,
+          baseName: group.base,
+          ext: group.ext,
+          digits: group.digits,
+          startNumber: 0,
+          frameCount: group.indices.size,
+        };
+      }
+    }
+
+    // Otherwise, recurse into subdirectories
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const subPath = path.join(currentDir, entry.name);
+      const found = await scanDir(subPath);
+      if (found) return found;
+    }
+
+    return null;
+  }
+
+  try {
+    return await scanDir(rootDir);
+  } catch (err) {
+    console.error(`Error while scanning for image sequence in ${rootDir}:`, err);
+    return null;
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -137,24 +199,10 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
             let shotCount = 0;
             let frameCount = 0;
             try {
-              const versionEntries = await fs.readdir(fullPath, { withFileTypes: true });
-              const shotDirs = versionEntries.filter((e) => e.isDirectory());
-
-              if (shotDirs.length > 0) {
-                shotCount = shotDirs.length;
-                for (const shotDir of shotDirs) {
-                  const shotPath = path.join(fullPath, shotDir.name);
-                  const shotFiles = await fs.readdir(shotPath);
-                  frameCount += shotFiles.filter((f) => f.toLowerCase().endsWith('.png')).length;
-                }
-              } else {
-                const imageFiles = versionEntries.filter(
-                  (e) => !e.isDirectory() && e.name.toLowerCase().endsWith('.png'),
-                );
-                if (imageFiles.length > 0) {
-                  shotCount = 1;
-                  frameCount = imageFiles.length;
-                }
+              const sequence = await findImageSequenceRecursive(fullPath);
+              if (sequence) {
+                shotCount = 1;
+                frameCount = sequence.frameCount;
               }
             } catch (e) {
               console.error(`Error analyzing folder contents for ${fullPath}:`, e);
@@ -227,166 +275,62 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths) => {
 
     try {
       console.log(`Processing image sequences in version folder: ${versionFolderPath}`);
-
-      const shotDirs = (await fs.readdir(versionFolderPath, { withFileTypes: true }))
-        .filter((dirent) => dirent.isDirectory())
-        .map((dirent) => dirent.name)
-        .sort();
-
-      console.log(`Found ${shotDirs.length} potential shot directories in ${versionFolderPath}`);
-
-      const videoFiles = [];
-
-      for (const shotDirName of shotDirs) {
-        if (isCancelled) break;
-        const shotFolderPath = path.join(versionFolderPath, shotDirName);
-        console.log(`Processing shot folder: ${shotFolderPath}`);
-
-        const files = (await fs.readdir(shotFolderPath))
-          .filter((file) => file.toLowerCase().endsWith('.png'))
-          .sort();
-
-        if (files.length === 0) {
-          console.log(`No PNG files found in ${shotDirName}`);
-          continue;
-        }
-
-        console.log(`Found ${files.length} PNG files in ${shotDirName}`);
-
-        const firstFile = files[0];
-        let match = firstFile.match(/(\d{4})(?=\.png$)/i);
-        if (!match) {
-          const fallbackMatch = firstFile.match(/(\d+)(?=\.png$)/i);
-          if (!fallbackMatch) {
-            console.log(
-              `Could not determine start number for ${shotDirName} from file ${firstFile}`,
-            );
-            continue;
-          }
-          console.log(`Using fallback regex for start number in ${shotDirName}`);
-          match = fallbackMatch;
-        }
-
-        const startNumberStr = match[1];
-        const startNumber = parseInt(startNumberStr);
-
-        const filePattern =
-          firstFile.substring(0, match.index) +
-          '%04d' +
-          firstFile.substring(match.index + startNumberStr.length);
-        const outputFile = `${shotDirName}_preview.mp4`;
-        const outputPath = path.join(shotFolderPath, outputFile);
-
-        try {
-          if (
-            await fs
-              .stat(outputPath)
-              .then(() => true)
-              .catch(() => false)
-          ) {
-            await fs.unlink(outputPath);
-            console.log(`Deleted existing ${outputFile} in ${shotDirName}`);
-          }
-        } catch (e) {
-          console.warn(`Could not delete existing file ${outputPath}: ${e.message}`);
-        }
-
-        const ffmpegArgs = [
-          '-framerate',
-          '24',
-          '-start_number',
-          startNumber.toString(),
-          '-i',
-          path.join(shotFolderPath, filePattern),
-          '-pix_fmt',
-          'yuv420p',
-          outputPath,
-        ];
-
-        try {
-          console.log(
-            `Processing ${shotDirName}... Running command: ffmpeg ${ffmpegArgs.join(' ')}`,
-          );
-          await execFileCancellable('ffmpeg', ffmpegArgs);
-        } catch (error) {
-          if (isCancelled) {
-            console.log(`Processing of ${shotDirName} was cancelled.`);
-            break; // Break from the shot-processing loop
-          }
-          console.error(
-            `Error processing ${shotDirName}:`,
-            error.message,
-            error.stderr?.toString(),
-          );
-          mainWindow.webContents.send('processing-update', {
-            type: 'error',
-            message: `Error processing ${shotDirName}: ${error.message}`,
-          });
-          continue; // Continue to the next shot directory
-        }
-        console.log(`Created ${outputFile} in ${shotFolderPath}`);
-        videoFiles.push(outputPath);
+      // Find the single sequence anywhere inside the version folder
+      const sequence = await findImageSequenceRecursive(versionFolderPath);
+      if (!sequence) {
+        console.log('No valid image sequence found (needs 0000 and at least 20 frames).');
+        mainWindow.webContents.send('processing-update', {
+          type: 'error',
+          message: `No valid image sequence found in ${version}`,
+        });
+        completedFolders++;
+        continue;
       }
 
-      if (isCancelled) break;
+      const filePattern = `${sequence.baseName}.%0${sequence.digits}d.${sequence.ext}`;
+      const inputPatternFullPath = path.join(sequence.directory, filePattern);
+      const combinedOutput = path.join(versionFolderPath, 'all_shots_combined.mp4');
 
-      if (videoFiles.length > 0) {
-        const listFile = path.join(versionFolderPath, 'temp_ffmpeg_list.txt');
-        const fileContent = videoFiles
-          .map((file) => `file '${file.replace(/'/g, "'\\\\''")}'`)
-          .join('\n');
-        await fs.writeFile(listFile, fileContent);
-        const combinedOutput = path.join(versionFolderPath, 'all_shots_combined.mp4');
-        try {
-          if (
-            await fs
-              .stat(combinedOutput)
-              .then(() => true)
-              .catch(() => false)
-          ) {
-            await fs.unlink(combinedOutput);
-            console.log(`Deleted existing ${combinedOutput}`);
-          }
-        } catch (e) {
-          console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
+      try {
+        if (
+          await fs
+            .stat(combinedOutput)
+            .then(() => true)
+            .catch(() => false)
+        ) {
+          await fs.unlink(combinedOutput);
+          console.log(`Deleted existing ${combinedOutput}`);
         }
+      } catch (e) {
+        console.warn(`Could not delete existing file ${combinedOutput}: ${e.message}`);
+      }
 
-        const combineArgs = [
-          '-f',
-          'concat',
-          '-safe',
-          '0',
-          '-i',
-          listFile,
-          '-c',
-          'copy',
-          combinedOutput,
-        ];
+      const ffmpegArgs = [
+        '-framerate',
+        '24',
+        '-start_number',
+        sequence.startNumber.toString(),
+        '-i',
+        inputPatternFullPath,
+        '-pix_fmt',
+        'yuv420p',
+        combinedOutput,
+      ];
 
-        try {
-          console.log('Creating combined video...');
-          console.log(`Running command: ffmpeg ${combineArgs.join(' ')}`);
-          await execFileCancellable('ffmpeg', combineArgs);
-          console.log(`Created ${combinedOutput}`);
-        } catch (error) {
-          if (isCancelled) {
-            console.log('Video combination was cancelled.');
-            break; // Break from the main folder loop
-          }
-          console.error('Error creating combined video:', error.message, error.stderr?.toString());
-          mainWindow.webContents.send('processing-update', {
-            type: 'error',
-            message: `Error creating combined video: ${error.message}`,
-          });
+      try {
+        console.log(`Running command: ffmpeg ${ffmpegArgs.join(' ')}`);
+        await execFileCancellable('ffmpeg', ffmpegArgs);
+        console.log(`Created ${combinedOutput}`);
+      } catch (error) {
+        if (isCancelled) {
+          console.log('Video creation was cancelled.');
+          break; // Break from the main folder loop
         }
-        try {
-          await fs.unlink(listFile);
-          console.log(`Deleted temp list file: ${listFile}`);
-        } catch (e) {
-          console.warn(`Could not delete temp list file ${listFile}: ${e.message}`);
-        }
-      } else {
-        console.log('No video files were created, skipping combination.');
+        console.error('Error creating video:', error.message, error.stderr?.toString());
+        mainWindow.webContents.send('processing-update', {
+          type: 'error',
+          message: `Error creating video for ${version}: ${error.message}`,
+        });
       }
     } catch (error) {
       if (!isCancelled) {
