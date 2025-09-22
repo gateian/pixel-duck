@@ -96,10 +96,14 @@ async function findImageSequenceRecursive(rootDir) {
   }
 }
 
+function isAudioFileName(fileName) {
+  return /\.(wav|mp3)$/i.test(fileName);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1600,
+    height: 800,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -256,11 +260,20 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
             let shotCount = 0;
             let frameCount = 0;
             let panoramic = false;
+            let audioCount = 0;
             try {
               const sequence = await findImageSequenceRecursive(fullPath);
               if (sequence) {
                 shotCount = 1;
                 frameCount = sequence.frameCount;
+                try {
+                  const seqDirEntries = await fs.readdir(sequence.directory, {
+                    withFileTypes: true,
+                  });
+                  audioCount = seqDirEntries.filter(
+                    (e) => !e.isDirectory() && isAudioFileName(e.name),
+                  ).length;
+                } catch (_) {}
               }
               // Load settings to expose panoramic flag in listing
               try {
@@ -282,6 +295,7 @@ ipcMain.handle('find-version-folders', async (event, directoryPath) => {
               shotCount,
               frameCount,
               panoramic,
+              audioCount,
             });
           } else {
             // If it's not a version folder, search inside it
@@ -418,6 +432,37 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
           ]
         : ['-movflags', '+faststart'];
 
+      // Determine audio to include, if present
+      let audioFilesInSequenceDir = [];
+      try {
+        const entries = await fs.readdir(sequence.directory, { withFileTypes: true });
+        audioFilesInSequenceDir = entries
+          .filter((e) => !e.isDirectory() && isAudioFileName(e.name))
+          .map((e) => path.join(sequence.directory, e.name))
+          .sort();
+      } catch (_) {}
+
+      // Check if a preferred audio file exists in settings
+      let preferredAudio = null;
+      try {
+        const settingsPath = path.join(versionFolderPath, 'pixelduck-settings.json');
+        const content = await fs.readFile(settingsPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (parsed && parsed.audioFile && typeof parsed.audioFile === 'string') {
+          const candidate = path.isAbsolute(parsed.audioFile)
+            ? parsed.audioFile
+            : path.join(versionFolderPath, parsed.audioFile);
+          try {
+            await fs.stat(candidate);
+            preferredAudio = candidate;
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      const selectedAudio =
+        preferredAudio ||
+        (audioFilesInSequenceDir.length === 1 ? audioFilesInSequenceDir[0] : null);
+
       const ffmpegArgs = [
         '-framerate',
         '24',
@@ -425,8 +470,10 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
         sequence.startNumber.toString(),
         '-i',
         inputPatternFullPath,
+        ...(selectedAudio ? ['-i', selectedAudio, '-shortest'] : []),
         ...qualityArgs,
         ...vrMetadataArgs,
+        ...(selectedAudio ? ['-c:a', 'aac', '-b:a', '192k'] : []),
         combinedOutput,
       ];
 
@@ -463,4 +510,22 @@ ipcMain.on('process-sequences', async (event, versionFolderPaths, options = {}) 
 
   mainWindow.webContents.send('processing-update', { type: 'end' });
   console.log('All processing finished or was cancelled.');
+});
+
+// List audio files available alongside the detected sequence for a version folder
+ipcMain.handle('list-audio-files', async (_event, versionFolderPath) => {
+  const result = { files: [], directory: null };
+  try {
+    const sequence = await findImageSequenceRecursive(versionFolderPath);
+    if (!sequence) return result;
+    const entries = await fs.readdir(sequence.directory, { withFileTypes: true });
+    result.files = entries
+      .filter((e) => !e.isDirectory() && isAudioFileName(e.name))
+      .map((e) => e.name)
+      .sort();
+    result.directory = sequence.directory;
+  } catch (e) {
+    // ignore
+  }
+  return result;
 });

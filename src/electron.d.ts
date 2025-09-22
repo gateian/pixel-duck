@@ -14,6 +14,7 @@ declare global {
           shotCount: number;
           frameCount: number;
           panoramic?: boolean;
+          audioCount?: number;
         }>
       >;
       processSequences: (
@@ -29,8 +30,13 @@ declare global {
         folderPaths: string[],
         settings: {
           panoramic?: boolean;
+          audioFile?: string;
         },
       ) => Promise<void>;
+      listAudioFiles: (folderPath: string) => Promise<{
+        files: string[];
+        directory: string | null;
+      }>;
       cancelProcessing: () => void;
       onProcessingUpdate: (
         callback: (update: {

@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 // removed bottom bar checkbox
 import SettingsIcon from '@mui/icons-material/Settings';
+import AudiotrackIcon from '@mui/icons-material/Audiotrack';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -49,6 +50,7 @@ interface VersionFolder {
   shotCount: number;
   frameCount: number;
   panoramic?: boolean;
+  audioCount?: number;
 }
 
 interface GroupedVersionFolders {
@@ -71,6 +73,12 @@ const App: React.FC = () => {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState<boolean>(false);
   const [settingsTargetFolder, setSettingsTargetFolder] = useState<string>('');
   const [dialogPanoramic, setDialogPanoramic] = useState<boolean>(false);
+  const [audioDialogOpen, setAudioDialogOpen] = useState<boolean>(false);
+  const [audioOptions, setAudioOptions] = useState<{ files: string[]; directory: string | null }>({
+    files: [],
+    directory: null,
+  });
+  const [selectedAudioFile, setSelectedAudioFile] = useState<string | null>(null);
 
   const groupVersionFoldersByParent = useCallback(
     (folders: VersionFolder[]): GroupedVersionFolders[] => {
@@ -206,12 +214,39 @@ const App: React.FC = () => {
       try {
         await window.electronAPI.saveVersionSettings([settingsTargetFolder], {
           panoramic: dialogPanoramic,
+          audioFile: selectedAudioFile || undefined,
         });
       } catch (err) {
         console.error('Failed to save settings:', err);
       }
     }
     setSettingsDialogOpen(false);
+  };
+
+  const openAudioDialog = async (e: React.MouseEvent, folderPath: string) => {
+    e.stopPropagation();
+    try {
+      const { files, directory } = await window.electronAPI.listAudioFiles(folderPath);
+      setAudioOptions({ files, directory });
+      setSelectedAudioFile(null);
+      setSettingsTargetFolder(folderPath);
+      setAudioDialogOpen(true);
+    } catch (err) {
+      console.error('Failed to list audio files:', err);
+    }
+  };
+
+  const closeAudioDialog = () => setAudioDialogOpen(false);
+  const saveAudioDialog = async () => {
+    if (!settingsTargetFolder) return;
+    try {
+      await window.electronAPI.saveVersionSettings([settingsTargetFolder], {
+        audioFile: selectedAudioFile || undefined,
+      });
+      setAudioDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to save audio selection:', err);
+    }
   };
 
   const handleProcessSelectedSequences = async () => {
@@ -301,6 +336,18 @@ const App: React.FC = () => {
                                 <PanoramaIcon sx={{ color: '#fff', mt: 1 }} />
                               </Tooltip>
                             )}
+                            {folder.audioCount && folder.audioCount >= 1 ? (
+                              <Tooltip
+                                title={
+                                  folder.audioCount > 1
+                                    ? 'Multiple audio tracks detected'
+                                    : 'Audio track detected'
+                                }
+                                arrow
+                              >
+                                <AudiotrackIcon sx={{ color: '#fff', mt: 1 }} />
+                              </Tooltip>
+                            ) : null}
                           </Box>
                           <Box sx={{ flex: 1, p: 2 }}>
                             <Box
@@ -335,6 +382,25 @@ const App: React.FC = () => {
                                     <FolderIcon />
                                   </IconButton>
                                 </Tooltip>
+                                {folder.audioCount && folder.audioCount > 1 && (
+                                  <Tooltip title="Select audio track" arrow>
+                                    <IconButton
+                                      size="small"
+                                      onClick={(e) => openAudioDialog(e, folder.path)}
+                                      sx={{
+                                        '& svg': {
+                                          color: 'action.active',
+                                          transition: 'color 0.2s',
+                                        },
+                                        '&:hover svg': {
+                                          color: 'primary.main',
+                                        },
+                                      }}
+                                    >
+                                      <AudiotrackIcon />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
                                 <Tooltip title="Settings" arrow>
                                   <IconButton
                                     size="small"
@@ -457,6 +523,32 @@ const App: React.FC = () => {
           <DialogActions>
             <Button onClick={closeSettingsDialog}>Cancel</Button>
             <Button onClick={saveSettingsDialog} variant="contained">
+              Save
+            </Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog open={audioDialogOpen} onClose={closeAudioDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>Select Audio Track</DialogTitle>
+          <DialogContent>
+            {audioOptions.files.length === 0 ? (
+              <Typography>No audio files found alongside the image sequence.</Typography>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {audioOptions.files.map((file) => (
+                  <Button
+                    key={file}
+                    variant={selectedAudioFile === file ? 'contained' : 'outlined'}
+                    onClick={() => setSelectedAudioFile(file)}
+                  >
+                    {file}
+                  </Button>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeAudioDialog}>Cancel</Button>
+            <Button onClick={saveAudioDialog} variant="contained" disabled={!selectedAudioFile}>
               Save
             </Button>
           </DialogActions>

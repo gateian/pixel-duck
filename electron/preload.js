@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVersionSettings: (folderPath) => ipcRenderer.invoke('get-version-settings', folderPath),
   saveVersionSettings: (folderPaths, settings) =>
     ipcRenderer.invoke('save-version-settings', folderPaths, settings),
+  listAudioFiles: (folderPath) => ipcRenderer.invoke('list-audio-files', folderPath),
   cancelProcessing: () => ipcRenderer.send('cancel-processing'),
   onProcessingUpdate: (callback) => {
     const listener = (_event, value) => callback(value);
